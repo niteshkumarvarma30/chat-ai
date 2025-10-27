@@ -1,0 +1,62 @@
+version: '3.9'
+
+services:
+  fastapi:
+    build: .
+    container_name: chat-ai-fastapi
+    command: uvicorn main_fastapi:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - chatnet
+
+  worker:
+    build: .
+    container_name: chat-ai-worker
+    command: python worker_gemini.py
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - chatnet
+
+  streamlit:
+    build: .
+    container_name: chat-ai-streamlit
+    command: streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    depends_on:
+      - fastapi
+    networks:
+      - chatnet
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: chat-ai-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - chatnet
+
+  redis:
+    image: redis:latest
+    container_name: chat-ai-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - chatnet
+
+networks:
+  chatnet:
+    driver: bridge

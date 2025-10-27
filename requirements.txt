@@ -1,0 +1,10 @@
+streamlit
+fastapi
+uvicorn
+pika
+supabase
+redis
+python-dotenv
+google-generativeai
+aio_pika
+streamlit-autorefresh
