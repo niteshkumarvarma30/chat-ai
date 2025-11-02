@@ -19,7 +19,6 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 
 # ---------------- INIT SERVICES ----------------
-# Supabase
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Redis
@@ -36,6 +35,14 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("models/gemini-2.5-flash")
 print("✅ Gemini client ready")
 
+# Lord Ram system prompt
+system_prompt = """
+🪔 You are Lord Ram, the virtuous prince of Ayodhya.
+Speak with serenity, compassion, and dharmic truth.
+Use a poetic, calm, and wise tone inspired by the Ramayana.
+Offer guidance with humility and divine insight.
+"""
+
 # ---------------- CONNECT TO RABBITMQ ----------------
 while True:
     try:
@@ -49,7 +56,7 @@ while True:
         print(f"❌ RabbitMQ not ready: {e}. Retrying in 5s...")
         time.sleep(5)
 
-print("🚀 Gemini Worker is now running and waiting for messages...")
+print("🚀 Gemini Worker (Lord Ram persona) is now active...")
 
 # ---------------- CALLBACK ----------------
 def callback(ch, method, properties, body):
@@ -57,18 +64,19 @@ def callback(ch, method, properties, body):
         data = json.loads(body)
         username = data.get("username", "guest")
         user_message = data.get("message", "").strip()
+        print(f"📩 Message from {username}: {user_message}")
 
-        print(f"📩 Received from {username}: {user_message}")
+        # Combine system prompt + user message
+        prompt = f"{system_prompt}\n\nUser: {user_message}\nLord Ram:"
 
-        # Generate Gemini response
         try:
-            response = model.generate_content(user_message)
+            response = model.generate_content(prompt)
             reply_text = response.text.strip() if hasattr(response, "text") else "(No response)"
         except Exception as e:
             reply_text = f"⚠️ Gemini API error: {e}"
             print(reply_text)
 
-        # ---------------- SEND TO REPLY QUEUE ----------------
+        # Send reply back
         reply_payload = {
             "username": username,
             "response": reply_text,
@@ -79,11 +87,11 @@ def callback(ch, method, properties, body):
             exchange="",
             routing_key="reply_queue",
             body=json.dumps(reply_payload),
-            properties=pika.BasicProperties(delivery_mode=2),  # persistent
+            properties=pika.BasicProperties(delivery_mode=2),
         )
         print("📤 Sent reply to reply_queue.")
 
-        # ---------------- UPDATE SUPABASE ----------------
+        # Update Supabase
         try:
             result = supabase.table("chat_history") \
                 .select("id") \
@@ -92,6 +100,7 @@ def callback(ch, method, properties, body):
                 .order("created_at", desc=True) \
                 .limit(1) \
                 .execute()
+
             if result.data:
                 last_id = result.data[0]["id"]
                 supabase.table("chat_history") \
@@ -100,7 +109,6 @@ def callback(ch, method, properties, body):
                     .execute()
                 print(f"✅ Supabase updated for message ID {last_id}")
             else:
-                # fallback if message not found
                 supabase.table("chat_history").insert({
                     "username": username,
                     "message": user_message,
@@ -111,7 +119,7 @@ def callback(ch, method, properties, body):
         except Exception as e:
             print(f"❌ Supabase update failed: {e}")
 
-        # ---------------- UPDATE REDIS CACHE ----------------
+        # Redis update
         try:
             if r:
                 cache_key = f"chat:{username}"
@@ -126,7 +134,6 @@ def callback(ch, method, properties, body):
         except Exception as e:
             print(f"⚠️ Redis cache update failed: {e}")
 
-        # ACKNOWLEDGE MESSAGE
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     except Exception as e:

@@ -15,6 +15,8 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY bcb77977-752f-4c46-ae2d-d236a0c7d62f.png /app/
+
 # Copy all project files
 COPY . .
 
